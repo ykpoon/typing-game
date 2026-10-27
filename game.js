@@ -1,15 +1,14 @@
 /**
- * 倉頡打字太空射擊遊戲 - 戰機重置美化版 (Complete Local Version)
- * 特色：
- * 1. 100% 純前端，排行榜使用 LocalStorage。
- * 2. 移除底部緩衝欄，改為緊跟在戰機下方的「霓虹浮動指示器」。
- * 3. 速度精細調校：第一關保持高速（1.95），【優化】第三關大幅調慢（1.5）讓玩家有足夠時間拆解 4-5 碼複雜字。
- * 4. 10字通關：每關擊破 10 個隕石立刻進入 Level Up 動態橫幅，並完美通關！
- * 5. 實體圓形護盾罩：滿狀態厚實，受損時護盾動態變薄（Thin）並由青轉紅。
- * 6. 【全新】立體背景流星雨： Canvas 背景偶爾跌落帶有等離子尾焰的半透明流星，增加刺激感且不影響視線！
+ * 3D 倉頡打字太空射擊遊戲 - 深度立體互動旗艦版 (Complete Local 3D Version)
+ * 升級亮點：
+ * 1. 100% 保留繁體中文 UI 與三大關卡倉頡字庫設定。
+ * 2. 3D 遠近景深透視 (Z-Depth Scaling)：隕石從遠方深空生成時體積較小（0.55x），隨下落逼近戰機時立體放大至 1.18x，營造極強 3D 壓迫感！
+ * 3. 3D 穿梭星塵隧道 (Starfield Warp Tunnel) + 關卡晉升「超空間躍遷 (Hyperspace Jump)」特效。
+ * 4. 戰機 3D 動態傾角轉向 (3D Roll & Aiming)：打字鎖定目標時，戰機自動向目標方向側傾並微幅橫移，每次按鍵皆發射「前導追蹤光束 (Tracer Pulse)」，完整輸入時發射「雙聯裝重型等離子雷射」與 3D 擴散震波環！
+ * 5. 滑鼠 3D 視差互動 (Mouse 3D Parallax)：移動滑鼠時星空背景與開始卡片具備真實 3D 視差傾斜回饋。
  */
 
-// --- 1. 三關字庫設定 (第三關已調慢，確保拆碼時間) ---
+// --- 1. 三關字庫設定 (保留原有精細速度設定) ---
 const LEVEL_DATA = {
     1: {
         title: "第一關：倉頡基本字根",
@@ -58,8 +57,8 @@ const LEVEL_DATA = {
     3: {
         title: "第三關：高難度手冊挑戰",
         description: "挑戰學習冊中 4 至 5 碼的複雜分體字！",
-        speed: 1.5, // 【優化】第三關速度降低至 1.5（從 2.8 大幅調慢），給予充足時間思考拆碼！
-        spawnInterval: 4200, // 生成間隔同步放寬，避免單字過度擁擠
+        speed: 1.5, // 第三關速度降低至 1.5，給予充足時間思考拆碼
+        spawnInterval: 4200,
         words: [
             { char: "你", code: "ONF" },    // 人 弓 火
             { char: "語", code: "YRMR" },   // 卜 口 一 口
@@ -78,27 +77,29 @@ const CANGJIE_ALPHABET = {
     'V': '女', 'W': '田', 'Y': '卜'
 };
 
-// --- 2. AUDIO SYNTHESIZER (Web Audio API 原生即時合成) ---
+// --- 2. AUDIO SYNTHESIZER (Web Audio API 原生立體聲效合成) ---
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
-function playLaserSound() {
+function playLaserSound(isHeavy = false) {
     if (audioCtx.state === 'suspended') audioCtx.resume();
     const osc = audioCtx.createOscillator();
     const gainNode = audioCtx.createGain();
     osc.connect(gainNode);
     gainNode.connect(audioCtx.destination);
-    osc.type = 'sawtooth';
-    osc.frequency.setValueAtTime(950, audioCtx.currentTime); 
-    osc.frequency.exponentialRampToValueAtTime(120, audioCtx.currentTime + 0.12);
-    gainNode.gain.setValueAtTime(0.12, audioCtx.currentTime);
-    gainNode.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.12);
+    osc.type = isHeavy ? 'sawtooth' : 'sine';
+    const startFreq = isHeavy ? 1100 : 1400;
+    const duration = isHeavy ? 0.16 : 0.08;
+    osc.frequency.setValueAtTime(startFreq, audioCtx.currentTime); 
+    osc.frequency.exponentialRampToValueAtTime(140, audioCtx.currentTime + duration);
+    gainNode.gain.setValueAtTime(isHeavy ? 0.15 : 0.08, audioCtx.currentTime);
+    gainNode.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + duration);
     osc.start();
-    osc.stop(audioCtx.currentTime + 0.12);
+    osc.stop(audioCtx.currentTime + duration);
 }
 
 function playExplosionSound() {
     if (audioCtx.state === 'suspended') audioCtx.resume();
-    const bufferSize = audioCtx.sampleRate * 0.3; 
+    const bufferSize = audioCtx.sampleRate * 0.35; 
     const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
     const data = buffer.getChannelData(0);
     for (let i = 0; i < bufferSize; i++) {
@@ -108,16 +109,16 @@ function playExplosionSound() {
     noiseSource.buffer = buffer;
     const filter = audioCtx.createBiquadFilter();
     filter.type = 'lowpass';
-    filter.frequency.setValueAtTime(600, audioCtx.currentTime);
-    filter.frequency.exponentialRampToValueAtTime(40, audioCtx.currentTime + 0.3);
+    filter.frequency.setValueAtTime(750, audioCtx.currentTime);
+    filter.frequency.exponentialRampToValueAtTime(35, audioCtx.currentTime + 0.35);
     const gainNode = audioCtx.createGain();
-    gainNode.gain.setValueAtTime(0.35, audioCtx.currentTime);
-    gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+    gainNode.gain.setValueAtTime(0.4, audioCtx.currentTime);
+    gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.35);
     noiseSource.connect(filter);
     filter.connect(gainNode);
     gainNode.connect(audioCtx.destination);
     noiseSource.start();
-    noiseSource.stop(audioCtx.currentTime + 0.3);
+    noiseSource.stop(audioCtx.currentTime + 0.35);
 }
 
 function playErrorSound() {
@@ -127,30 +128,32 @@ function playErrorSound() {
     osc.connect(gainNode);
     gainNode.connect(audioCtx.destination);
     osc.type = 'triangle';
-    osc.frequency.setValueAtTime(140, audioCtx.currentTime);
-    gainNode.gain.setValueAtTime(0.18, audioCtx.currentTime);
-    gainNode.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.18);
+    osc.frequency.setValueAtTime(150, audioCtx.currentTime);
+    osc.frequency.linearRampToValueAtTime(95, audioCtx.currentTime + 0.2);
+    gainNode.gain.setValueAtTime(0.2, audioCtx.currentTime);
+    gainNode.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
     osc.start();
-    osc.stop(audioCtx.currentTime + 0.18);
+    osc.stop(audioCtx.currentTime + 0.2);
 }
 
 function playLevelUpSound() {
     if (audioCtx.state === 'suspended') audioCtx.resume();
-    const notes = [261.63, 329.63, 392.00, 523.25];
+    const notes = [261.63, 329.63, 392.00, 523.25, 659.25];
     notes.forEach((freq, idx) => {
         const osc = audioCtx.createOscillator();
         const gainNode = audioCtx.createGain();
         osc.connect(gainNode);
         gainNode.connect(audioCtx.destination);
+        osc.type = 'triangle';
         osc.frequency.value = freq;
-        gainNode.gain.setValueAtTime(0.12, audioCtx.currentTime + idx * 0.08);
-        gainNode.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + idx * 0.08 + 0.25);
-        osc.start(audioCtx.currentTime + idx * 0.08);
-        osc.stop(audioCtx.currentTime + idx * 0.08 + 0.25);
+        gainNode.gain.setValueAtTime(0.14, audioCtx.currentTime + idx * 0.07);
+        gainNode.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + idx * 0.07 + 0.28);
+        osc.start(audioCtx.currentTime + idx * 0.07);
+        osc.stop(audioCtx.currentTime + idx * 0.07 + 0.28);
     });
 }
 
-// --- 3. 遊戲狀態控制 ---
+// --- 3. 遊戲狀態控制 (含 3D 星空隧道、震波與浮動文字) ---
 const state = {
     playerName: "",
     className: "",
@@ -163,8 +166,15 @@ const state = {
     keystrokesCount: 0,
     correctKeystrokesCount: 0,
     wordsDestroyedInLevel: 0, 
-    particles: [],            // 爆炸粒子
-    bgAsteroids: [],          // 【全新】背景純裝飾流星陣列
+    particles: [],            // 3D 爆炸能量碎片
+    shockwaves: [],           // 3D 透視橢圓震波環
+    floatingTexts: [],        // 擊破時浮動「+分數 / COMBO」立體字
+    lasers: [],               // 雙聯裝雷射與前導追蹤光束陣列
+    warpStars: [],            // 3D 中心向外輻射穿梭星塵
+    warpSpeedMultiplier: 1.0, // 超空間躍遷加速倍率
+    shipTargetXOffset: 0,     // 戰機跟隨目標微幅位移
+    shipCurrentXOffset: 0,
+    shipRollDeg: 0,           // 戰機 3D 左右傾角 (Roll)
     gameLoopId: null,
     spawnIntervalId: null,
     isPlaying: false
@@ -172,6 +182,7 @@ const state = {
 
 const dom = {
     startScreen: document.getElementById('start-screen'),
+    startCard: document.getElementById('start-card'),
     gameScreen: document.getElementById('game-screen'),
     endScreen: document.getElementById('end-screen'),
     startForm: document.getElementById('start-form'),
@@ -181,10 +192,15 @@ const dom = {
     hudPlayer: document.getElementById('hud-player'),
     hudScore: document.getElementById('hud-score'),
     hudCombo: document.getElementById('hud-combo'),
+    hudComboBox: document.getElementById('hud-combo-box'),
     hudShieldPct: document.getElementById('hud-shield-pct'),
+    hudShieldBar: document.getElementById('hud-shield-bar'),
+    hudProgressText: document.getElementById('hud-progress-text'),
+    hudProgressBar: document.getElementById('hud-progress-bar'),
     hudLevel: document.getElementById('hud-level'),
     gameArea: document.getElementById('game-area'),
     playerShip: document.getElementById('player-ship'),
+    shipHull: document.getElementById('ship-hull'),
     shipShield: document.getElementById('ship-shield'),
     floatingBadge: document.getElementById('floating-input-badge'),
     laserCanvas: document.getElementById('laser-canvas'),
@@ -193,37 +209,63 @@ const dom = {
     endAccuracy: document.getElementById('end-accuracy'),
     endLevel: document.getElementById('end-level'),
     leaderboardBody: document.getElementById('leaderboard-body'),
-    restartBtn: document.getElementById('restart-btn')
+    restartBtn: document.getElementById('restart-btn'),
+    starsLayer: document.querySelector('.stars')
 };
 
 const ctx = dom.laserCanvas.getContext('2d');
 function resizeCanvas() {
-    dom.laserCanvas.width = dom.gameArea.clientWidth;
-    dom.laserCanvas.height = dom.gameArea.clientHeight;
+    dom.laserCanvas.width = dom.gameArea.clientWidth || window.innerWidth;
+    dom.laserCanvas.height = dom.gameArea.clientHeight || window.innerHeight;
 }
 window.addEventListener('resize', resizeCanvas);
 
+// --- 滑鼠 3D 視差互動 (讓開始畫面與星空具備 3D 景深傾斜感) ---
+window.addEventListener('mousemove', (e) => {
+    const normX = (e.clientX / window.innerWidth - 0.5) * 2; // -1 ~ 1
+    const normY = (e.clientY / window.innerHeight - 0.5) * 2;
+    
+    if (dom.starsLayer) {
+        dom.starsLayer.style.transform = `translate3d(${-normX * 18}px, ${-normY * 18}px, 0)`;
+    }
+    if (!state.isPlaying && dom.startCard) {
+        dom.startCard.style.transform = `rotateY(${normX * 8}deg) rotateX(${-normY * 8}deg)`;
+    }
+});
 
-// --- 4. 鍵盤輸入事件與動態匹配 ---
+// 初始化 3D 穿梭星塵隧道粒子
+function initWarpStars() {
+    state.warpStars = [];
+    const count = 85;
+    for (let i = 0; i < count; i++) {
+        state.warpStars.push({
+            x: (Math.random() - 0.5) * 1600,
+            y: (Math.random() - 0.5) * 1000,
+            z: Math.random() * 1000 + 50,
+            pz: 1000
+        });
+    }
+}
+
+// --- 4. 鍵盤輸入事件與 3D 戰機動態鎖定 ---
 dom.startForm.addEventListener('submit', (e) => {
     e.preventDefault();
     state.playerName = dom.playerName.value.trim();
     state.className = dom.className.value.trim().toUpperCase();
     state.currentLevel = parseInt(dom.startLevel.value);
     
-    dom.startScreen.classList.add('opacity-0');
+    dom.startScreen.classList.add('opacity-0', 'scale-95');
     setTimeout(() => {
         dom.startScreen.classList.add('hidden');
         dom.gameScreen.classList.remove('hidden');
         resizeCanvas();
         startGame();
-    }, 500);
+    }, 450);
 });
 
 dom.restartBtn.addEventListener('click', () => {
     dom.endScreen.classList.add('hidden');
-    dom.startScreen.classList.remove('hidden');
-    dom.startScreen.classList.remove('opacity-0');
+    dom.startScreen.classList.remove('hidden', 'opacity-0', 'scale-95');
     resetGameState();
 });
 
@@ -235,7 +277,7 @@ window.addEventListener('keydown', (e) => {
     if (e.key === 'Backspace') {
         state.inputBuffer.pop();
         updateFloatingInputUI();
-        reEvaluateMatching();
+        reEvaluateMatching(false);
         return;
     }
     
@@ -244,17 +286,19 @@ window.addEventListener('keydown', (e) => {
     state.keystrokesCount++;
     state.inputBuffer.push(key);
     
-    reEvaluateMatching();
+    reEvaluateMatching(true);
 });
 
-function reEvaluateMatching() {
+function reEvaluateMatching(isNewKeystroke = true) {
     const typedStr = state.inputBuffer.join('');
     let matchFound = false;
+    let firstMatchedEnemy = null;
     let completeMatch = null;
 
     for (let enemy of state.activeEnemies) {
-        if (enemy.code.startsWith(typedStr)) {
+        if (typedStr.length > 0 && enemy.code.startsWith(typedStr)) {
             matchFound = true;
+            if (!firstMatchedEnemy) firstMatchedEnemy = enemy;
             enemy.highlightedIdx = typedStr.length; 
             updateEnemyUI(enemy);
             
@@ -270,39 +314,80 @@ function reEvaluateMatching() {
 
     if (completeMatch) {
         state.correctKeystrokesCount += completeMatch.code.length;
-        shootLaserAt(completeMatch);
+        aimShipAtEnemy(completeMatch);
+        shootDualLaserAt(completeMatch, true); // 雙聯裝重型爆破雷射
         destroyEnemy(completeMatch);
         state.inputBuffer = []; 
+        state.activeEnemies.forEach(e => { e.highlightedIdx = 0; updateEnemyUI(e); });
     } else if (matchFound) {
-        state.correctKeystrokesCount++;
-        playLaserSound();
-    } else {
+        if (isNewKeystroke) {
+            state.correctKeystrokesCount++;
+            aimShipAtEnemy(firstMatchedEnemy);
+            shootDualLaserAt(firstMatchedEnemy, false); // 單發前導鎖定能量束
+        }
+    } else if (typedStr.length > 0) {
         playErrorSound();
         state.combo = 0;
-        dom.hudCombo.textContent = state.combo;
+        updateComboUI();
         state.inputBuffer = [];
+        state.shipTargetXOffset = 0;
+        state.shipRollDeg = 0;
         state.activeEnemies.forEach(e => { e.highlightedIdx = 0; updateEnemyUI(e); });
+        
+        // 輸入錯誤時浮動指示器閃紅提示
+        dom.floatingBadge.classList.add('!border-red-500', '!text-red-400', 'scale-95');
+        setTimeout(() => updateFloatingInputUI(), 180);
+        return;
+    } else {
+        state.shipTargetXOffset = 0;
+        state.shipRollDeg = 0;
     }
     
     updateFloatingInputUI();
 }
 
+// 戰機 3D 傾角瞄準目標
+function aimShipAtEnemy(enemy) {
+    const centerX = dom.laserCanvas.width / 2;
+    const deltaX = enemy.x - centerX;
+    // 戰機微幅橫向跟隨位移 (-75px ~ +75px) 與 3D 翻滾角 (-24deg ~ +24deg)
+    state.shipTargetXOffset = Math.max(-75, Math.min(75, deltaX * 0.18));
+    state.shipRollDeg = Math.max(-24, Math.min(24, deltaX * 0.06));
+}
+
 function updateFloatingInputUI() {
     if (state.inputBuffer.length === 0) {
-        dom.floatingBadge.textContent = "WAITING...";
-        dom.floatingBadge.className = "mt-4 bg-slate-900/90 border border-slate-700 px-3 py-1 rounded-full text-[10px] font-mono font-bold text-slate-400 shadow-none whitespace-nowrap min-w-[80px] text-center transition-all";
+        dom.floatingBadge.innerHTML = `<span class="text-slate-400 tracking-widest text-[11px]">READY 待命</span>`;
+        dom.floatingBadge.className = "mt-2 bg-slate-900/90 border border-slate-700 px-4 py-1 rounded-2xl text-xs font-mono font-bold text-slate-400 shadow-none whitespace-nowrap min-w-[100px] text-center transition-all duration-150 flex items-center justify-center gap-1";
         return;
     }
     
-    const chCodes = state.inputBuffer.map(k => CANGJIE_ALPHABET[k] || k).join(' ');
-    const engCodes = state.inputBuffer.join('');
+    // 3D 立體鍵帽式顯示已輸入的倉頡字根
+    const htmlCaps = state.inputBuffer.map(k => {
+        const cj = CANGJIE_ALPHABET[k] || k;
+        return `<span class="px-2 py-0.5 rounded-md bg-cyan-500 text-slate-950 font-black shadow-[0_2px_0_#0369a1]">${cj}(${k})</span>`;
+    }).join('');
     
-    dom.floatingBadge.textContent = `${chCodes} (${engCodes})`;
-    dom.floatingBadge.className = "mt-4 bg-slate-900 border-2 border-cyan-400 px-3 py-1 rounded-full text-xs font-mono font-bold text-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.6)] scale-110 whitespace-nowrap min-w-[100px] text-center transition-all";
+    dom.floatingBadge.innerHTML = htmlCaps;
+    dom.floatingBadge.className = "mt-2 bg-slate-900/95 border-2 border-cyan-400 px-3 py-1 rounded-2xl text-xs font-mono font-bold text-white shadow-[0_0_20px_rgba(34,211,238,0.75)] scale-110 whitespace-nowrap min-w-[110px] text-center transition-all duration-150 flex items-center justify-center gap-1.5";
+}
+
+function updateComboUI() {
+    dom.hudCombo.textContent = state.combo;
+    if (state.combo >= 5) {
+        dom.hudComboBox.classList.add('scale-125');
+        setTimeout(() => dom.hudComboBox.classList.remove('scale-125'), 150);
+    }
+}
+
+function updateProgressUI() {
+    const pct = Math.min(100, (state.wordsDestroyedInLevel / 10) * 100);
+    if (dom.hudProgressText) dom.hudProgressText.textContent = `${state.wordsDestroyedInLevel} / 10`;
+    if (dom.hudProgressBar) dom.hudProgressBar.style.width = `${pct}%`;
 }
 
 
-// --- 5. 遊戲主循環與過關判定 ---
+// --- 5. 遊戲主循環與 3D 景深過關判定 ---
 function resetGameState() {
     state.score = 0;
     state.combo = 0;
@@ -312,9 +397,16 @@ function resetGameState() {
     state.activeEnemies = [];
     state.inputBuffer = [];
     state.particles = []; 
-    state.bgAsteroids = []; // 清空背景流星
+    state.shockwaves = [];
+    state.floatingTexts = [];
+    state.lasers = [];
+    state.warpSpeedMultiplier = 1.0;
+    state.shipTargetXOffset = 0;
+    state.shipCurrentXOffset = 0;
+    state.shipRollDeg = 0;
     state.keystrokesCount = 0;
     state.correctKeystrokesCount = 0;
+    initWarpStars();
     ctx.clearRect(0, 0, dom.laserCanvas.width, dom.laserCanvas.height);
 }
 
@@ -324,7 +416,8 @@ function startGame() {
     
     dom.hudPlayer.textContent = `${state.className} - ${state.playerName}`;
     dom.hudScore.textContent = state.score;
-    dom.hudCombo.textContent = state.combo;
+    updateComboUI();
+    updateProgressUI();
     updateShieldVisuals();
     dom.hudLevel.textContent = LEVEL_DATA[state.currentLevel].title;
     
@@ -338,6 +431,8 @@ function startGame() {
 function startEnemySpawner() {
     if (state.spawnIntervalId) clearInterval(state.spawnIntervalId);
     const config = LEVEL_DATA[state.currentLevel];
+    // 立即先生成一顆隕石，減少開局等待感
+    setTimeout(() => { if (state.isPlaying && state.activeEnemies.length === 0) spawnEnemy(); }, 400);
     state.spawnIntervalId = setInterval(() => {
         if (!state.isPlaying) return;
         spawnEnemy();
@@ -349,24 +444,30 @@ function spawnEnemy() {
     const randomWord = config.words[Math.floor(Math.random() * config.words.length)];
     
     const enemyEl = document.createElement('div');
-    enemyEl.className = 'absolute flex flex-col items-center z-10 select-none';
+    enemyEl.className = 'meteor-3d-wrapper absolute flex flex-col items-center z-20 select-none';
     
-    const spawnWidth = dom.gameArea.clientWidth - 100;
-    const leftPos = Math.max(20, Math.random() * spawnWidth);
+    const spawnWidth = Math.max(200, dom.gameArea.clientWidth - 150);
+    const leftPos = Math.max(45, Math.random() * spawnWidth);
     enemyEl.style.left = `${leftPos}px`;
-    enemyEl.style.top = `-80px`;
+    enemyEl.style.top = `-70px`;
     
-    const bubble = document.createElement('div');
-    bubble.className = 'enemy-glowing w-16 h-16 rounded-full bg-slate-900/95 flex items-center justify-center text-3xl font-extrabold border-2 border-red-500/80 text-white select-none shadow-lg cursor-default';
-    bubble.textContent = randomWord.char;
-    enemyEl.appendChild(bubble);
+    // 3D 立體隕石球核心 + 外圍立體星環 + 雷達鎖定準星
+    const sphereWrap = document.createElement('div');
+    sphereWrap.className = 'meteor-sphere-3d';
+    sphereWrap.innerHTML = `
+        <div class="meteor-orbit-ring"></div>
+        <div class="target-reticle"></div>
+        <span class="text-3xl font-black text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.9)] tracking-wide z-10">${randomWord.char}</span>
+    `;
+    enemyEl.appendChild(sphereWrap);
     
+    // 3D 鍵帽式拆碼提示列
     const hintBar = document.createElement('div');
-    hintBar.className = 'mt-1 bg-slate-950/90 border border-slate-800 rounded-md px-2 py-0.5 flex gap-1 justify-center min-w-[70px] shadow-md';
+    hintBar.className = 'mt-2 bg-slate-950/90 border border-slate-700/80 rounded-xl px-2 py-1 flex gap-1 justify-center min-w-[76px] shadow-[0_8px_16px_rgba(0,0,0,0.7)] backdrop-blur-sm';
     
     for (let i = 0; i < randomWord.code.length; i++) {
         const span = document.createElement('span');
-        span.className = 'text-xs font-mono text-slate-500 transition-colors duration-150';
+        span.className = 'keycap-badge';
         span.textContent = `${CANGJIE_ALPHABET[randomWord.code[i]]}(${randomWord.code[i]})`;
         hintBar.appendChild(span);
     }
@@ -378,151 +479,191 @@ function spawnEnemy() {
         hintBar: hintBar,
         char: randomWord.char,
         code: randomWord.code,
-        x: leftPos + 32,
-        y: -40,
-        speed: config.speed + (Math.random() * 0.4 - 0.2), 
+        x: leftPos + 36,
+        y: -50,
+        scale: 0.55, // 初始遠景 3D 縮放比例
+        speed: config.speed + (Math.random() * 0.35 - 0.15), 
         highlightedIdx: 0
     });
 }
 
 function updateEnemyUI(enemy) {
     const spans = enemy.hintBar.querySelectorAll('span');
+    if (enemy.highlightedIdx > 0) {
+        enemy.el.classList.add('meteor-locked');
+    } else {
+        enemy.el.classList.remove('meteor-locked');
+    }
     spans.forEach((span, idx) => {
         if (idx < enemy.highlightedIdx) {
-            span.className = 'text-xs font-mono text-cyan-400 font-black';
+            span.className = 'keycap-badge keycap-active';
         } else {
-            span.className = 'text-xs font-mono text-slate-500';
+            span.className = 'keycap-badge';
         }
     });
 }
 
-// 物理降落與畫面更新 (100% 統一 Canvas 渲染管線)
+// 物理降落、3D Z軸透視放大與統一 Canvas 渲染管線
 function gameUpdate() {
     if (!state.isPlaying) return;
     
-    const limitY = dom.gameArea.clientHeight - 130; 
+    const areaHeight = dom.gameArea.clientHeight;
+    const limitY = areaHeight - 135; 
     
-    // 1. 更新文字隕石位置
+    // 1. 更新戰機平滑 3D 位移與傾角回正
+    state.shipCurrentXOffset += (state.shipTargetXOffset - state.shipCurrentXOffset) * 0.15;
+    state.shipRollDeg *= 0.92;
+    dom.playerShip.style.transform = `translate3d(calc(-50% + ${state.shipCurrentXOffset}px), 0, 0)`;
+    if (dom.shipHull) {
+        dom.shipHull.style.transform = `perspective(400px) rotateY(${state.shipRollDeg}deg) rotateX(${Math.abs(state.shipRollDeg) * 0.25}deg)`;
+    }
+
+    // 2. 更新 3D 文字隕石位置與遠近透視縮放 (Z-Depth Scaling: 0.55x -> 1.18x)
     for (let i = state.activeEnemies.length - 1; i >= 0; i--) {
         const enemy = state.activeEnemies[i];
         enemy.y += enemy.speed;
+        const depthProgress = Math.max(0, Math.min(1, (enemy.y + 50) / limitY));
+        enemy.scale = 0.55 + depthProgress * 0.63;
+        
         enemy.el.style.top = `${enemy.y}px`;
+        enemy.el.style.transform = `scale(${enemy.scale.toFixed(3)})`;
+        enemy.el.style.zIndex = Math.floor(depthProgress * 20) + 10;
         
         if (enemy.y >= limitY) {
-            triggerShieldDamage();
+            triggerShieldDamage(enemy.x, enemy.y);
             enemy.el.remove();
             state.activeEnemies.splice(i, 1);
             state.combo = 0;
-            dom.hudCombo.textContent = state.combo;
+            updateComboUI();
         }
-    }
-    
-    // 2. 【全新】以極低機率產生背景裝飾流星 (流星雨效果)
-    if (Math.random() < 0.04) {
-        spawnBgAsteroid();
     }
     
     // 3. 畫布清空
     ctx.clearRect(0, 0, dom.laserCanvas.width, dom.laserCanvas.height);
 
-    // 4. 【全新】率先繪製背景流星 (確保其位於鐳射與爆炸的最底層)
-    updateAndDrawBgAsteroids();
+    // 4. 繪製 3D 中心輻射穿梭星塵隧道 (Starfield Warp Tunnel)
+    updateAndDrawWarpStars();
 
-    // 5. 繪製雷射軌跡
-    drawLasers();
+    // 5. 繪製雙聯裝雷射與前導追蹤能量束
+    updateAndDrawLasers();
 
-    // 6. 繪製爆炸碎片粒子
+    // 6. 繪製 3D 立體透視震波環 (Shockwave Rings)
+    updateAndDrawShockwaves();
+
+    // 7. 繪製爆炸碎片粒子
     updateAndDrawParticles();
+
+    // 8. 繪製 3D 浮動得分文字
+    updateAndDrawFloatingTexts();
     
     state.gameLoopId = requestAnimationFrame(gameUpdate);
 }
 
-// --- 【全新功能】背景裝飾流星系統 ---
-function spawnBgAsteroid() {
-    state.bgAsteroids.push({
-        x: Math.random() * dom.laserCanvas.width,
-        y: -50,
-        vy: Math.random() * 6 + 6,       // 下落速度極快，營造前進速度感 (6 ~ 12px)
-        vx: (Math.random() - 0.3) * 1.5, // 帶有一點點斜飄角度
-        size: Math.random() * 6 + 3,     // 大小 3 ~ 9px
-        color: ['rgba(244, 63, 94, 0.25)', 'rgba(249, 115, 22, 0.25)', 'rgba(100, 116, 139, 0.2)'][Math.floor(Math.random() * 3)] // 半透明深空色
-    });
-}
+// --- 3D 穿梭星塵隧道系統 (支援超空間躍遷加速) ---
+function updateAndDrawWarpStars() {
+    const cx = dom.laserCanvas.width / 2;
+    const cy = dom.laserCanvas.height * 0.35; // 遠方地平線消失點
+    const baseSpeed = 8 * state.warpSpeedMultiplier;
+    
+    // 緩慢將躍遷倍率恢復正常
+    if (state.warpSpeedMultiplier > 1.0) {
+        state.warpSpeedMultiplier = Math.max(1.0, state.warpSpeedMultiplier - 0.08);
+    }
 
-function updateAndDrawBgAsteroids() {
-    for (let i = state.bgAsteroids.length - 1; i >= 0; i--) {
-        const ast = state.bgAsteroids[i];
-        ast.x += ast.vx;
-        ast.y += ast.vy;
+    ctx.save();
+    for (let star of state.warpStars) {
+        star.pz = star.z;
+        star.z -= baseSpeed;
         
-        if (ast.y > dom.laserCanvas.height + 50) {
-            state.bgAsteroids.splice(i, 1);
-            continue;
+        if (star.z <= 10) {
+            star.x = (Math.random() - 0.5) * 1600;
+            star.y = (Math.random() - 0.5) * 1000;
+            star.z = 1000;
+            star.pz = 1000;
         }
         
-        // 繪製帶等離子高溫長尾跡的流星效果
-        ctx.beginPath();
-        const gradient = ctx.createLinearGradient(ast.x, ast.y, ast.x - ast.vx * 3, ast.y - ast.vy * 3);
-        gradient.addColorStop(0, ast.color);
-        gradient.addColorStop(1, 'rgba(0,0,0,0)');
+        const sx = cx + (star.x / star.z) * 450;
+        const sy = cy + (star.y / star.z) * 450;
+        const px = cx + (star.x / star.pz) * 450;
+        const py = cy + (star.y / star.pz) * 450;
         
-        ctx.strokeStyle = gradient;
-        ctx.lineWidth = ast.size / 2;
+        const alpha = Math.min(0.85, (1 - star.z / 1000) * 0.9);
+        const radius = Math.max(0.6, (1 - star.z / 1000) * 2.8);
+        
+        ctx.beginPath();
+        ctx.moveTo(px, py);
+        ctx.lineTo(sx, sy);
+        ctx.strokeStyle = state.warpSpeedMultiplier > 1.5 
+            ? `rgba(103, 232, 249, ${alpha})` 
+            : `rgba(226, 232, 240, ${alpha * 0.75})`;
+        ctx.lineWidth = radius;
         ctx.lineCap = 'round';
-        ctx.moveTo(ast.x, ast.y);
-        ctx.lineTo(ast.x - ast.vx * 3, ast.y - ast.vy * 3);
         ctx.stroke();
-        
-        // 繪製流星頭部的微弱發光核心
-        ctx.beginPath();
-        ctx.arc(ast.x, ast.y, ast.size / 3, 0, Math.PI * 2);
-        ctx.fillStyle = ast.color;
-        ctx.fill();
     }
+    ctx.restore();
 }
 
-let laserDrawing = null;
-function shootLaserAt(enemy) {
-    playLaserSound();
+// --- 雙聯裝重型雷射與前導追蹤光束 ---
+function shootDualLaserAt(enemy, isFinalKill = true) {
+    playLaserSound(isFinalKill);
     const shipRect = dom.playerShip.getBoundingClientRect();
     const areaRect = dom.gameArea.getBoundingClientRect();
     
-    const startX = shipRect.left - areaRect.left + 32; 
-    const startY = shipRect.top - areaRect.top + 10;
+    const centerX = shipRect.left - areaRect.left + shipRect.width / 2; 
+    const cannonY = shipRect.top - areaRect.top + 18;
     const targetX = enemy.x;
-    const targetY = enemy.y + 32;
+    const targetY = enemy.y + 36;
     
-    laserDrawing = { startX, startY, targetX, targetY, life: 1.0 };
+    if (isFinalKill) {
+        // 左右雙翼重型雙聯裝青色等離子雷射
+        state.lasers.push({ startX: centerX - 18, startY: cannonY, targetX: targetX - 6, targetY, life: 1.0, heavy: true, color: '#22d3ee' });
+        state.lasers.push({ startX: centerX + 18, startY: cannonY, targetX: targetX + 6, targetY, life: 1.0, heavy: true, color: '#38bdf8' });
+    } else {
+        // 單發紫紅前導鎖定光束 + 微型火花
+        state.lasers.push({ startX: centerX, startY: cannonY, targetX, targetY, life: 0.75, heavy: false, color: '#f472b6' });
+        createParticles(targetX, targetY, 6);
+    }
 }
 
-function drawLasers() {
-    if (!laserDrawing) return;
-    
-    ctx.beginPath();
-    ctx.moveTo(laserDrawing.startX, laserDrawing.startY);
-    ctx.lineTo(laserDrawing.targetX, laserDrawing.targetY);
-    ctx.strokeStyle = `rgba(34, 211, 238, ${laserDrawing.life})`;
-    ctx.lineWidth = 5 * laserDrawing.life;
-    ctx.shadowBlur = 20;
-    ctx.shadowColor = '#22d3ee';
-    ctx.stroke();
-    
-    ctx.beginPath();
-    ctx.moveTo(laserDrawing.startX, laserDrawing.startY);
-    ctx.lineTo(laserDrawing.targetX, laserDrawing.targetY);
-    ctx.strokeStyle = `rgba(255, 255, 255, ${laserDrawing.life})`;
-    ctx.lineWidth = 2 * laserDrawing.life;
-    ctx.shadowBlur = 0;
-    ctx.stroke();
-    
-    laserDrawing.life -= 0.14;
-    if (laserDrawing.life <= 0) laserDrawing = null;
+function updateAndDrawLasers() {
+    ctx.save();
+    for (let i = state.lasers.length - 1; i >= 0; i--) {
+        const l = state.lasers[i];
+        
+        ctx.beginPath();
+        ctx.moveTo(l.startX, l.startY);
+        ctx.lineTo(l.targetX, l.targetY);
+        ctx.strokeStyle = l.color;
+        ctx.globalAlpha = l.life;
+        ctx.lineWidth = (l.heavy ? 6 : 3) * l.life;
+        ctx.shadowBlur = l.heavy ? 22 : 12;
+        ctx.shadowColor = l.color;
+        ctx.lineCap = 'round';
+        ctx.stroke();
+        
+        // 雷射中心高溫白芯
+        ctx.beginPath();
+        ctx.moveTo(l.startX, l.startY);
+        ctx.lineTo(l.targetX, l.targetY);
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = (l.heavy ? 2.2 : 1) * l.life;
+        ctx.shadowBlur = 0;
+        ctx.stroke();
+        
+        l.life -= l.heavy ? 0.11 : 0.16;
+        if (l.life <= 0) state.lasers.splice(i, 1);
+    }
+    ctx.restore();
 }
 
-// 擊破文字隕石
+// 擊破文字隕石 (觸發 3D 震波環 + 浮動得分文字)
 function destroyEnemy(enemy) {
     playExplosionSound();
-    createParticles(enemy.x, enemy.y + 32);
+    const hitX = enemy.x;
+    const hitY = enemy.y + 36;
+    
+    createParticles(hitX, hitY, 28);
+    createShockwave(hitX, hitY);
     
     enemy.el.remove();
     state.activeEnemies = state.activeEnemies.filter(e => e !== enemy);
@@ -530,19 +671,27 @@ function destroyEnemy(enemy) {
     state.combo++;
     const comboBonus = Math.floor(state.combo / 5) * 5; 
     const baseScore = 10 * state.currentLevel;
-    state.score += baseScore + comboBonus;
+    const gainedScore = baseScore + comboBonus;
+    state.score += gainedScore;
+    
+    // 產生 3D 浮動戰績文字
+    createFloatingText(hitX, hitY - 10, `+${gainedScore}`, state.combo >= 5 ? `🔥 ${state.combo} COMBO!` : '');
     
     dom.hudScore.textContent = state.score;
-    dom.hudCombo.textContent = state.combo;
+    dom.hudScore.classList.add('scale-125');
+    setTimeout(() => dom.hudScore.classList.remove('scale-125'), 150);
+    updateComboUI();
     
-    // 當前關卡擊破數增加
     state.wordsDestroyedInLevel++;
+    updateProgressUI();
     
-    // 成功擊落 10 個字，立刻晉升或通關
+    // 成功擊落 10 個字，立刻啟動超空間躍遷晉升或完美通關
     if (state.wordsDestroyedInLevel >= 10) {
         if (state.currentLevel < 3) {
             state.currentLevel++;
             state.wordsDestroyedInLevel = 0; 
+            state.warpSpeedMultiplier = 6.5; // 啟動超空間星塵加速特效
+            updateProgressUI();
             dom.hudLevel.textContent = LEVEL_DATA[state.currentLevel].title;
             
             playLevelUpSound();
@@ -556,16 +705,17 @@ function destroyEnemy(enemy) {
 
 function showLevelUpBanner() {
     const banner = document.createElement('div');
-    banner.className = "absolute inset-0 flex flex-col items-center justify-center z-40 bg-slate-950/70 backdrop-blur-md pointer-events-none transition-all duration-500";
+    banner.className = "absolute inset-0 flex flex-col items-center justify-center z-40 bg-slate-950/65 backdrop-blur-md pointer-events-none transition-all duration-500";
     banner.innerHTML = `
-        <div class="text-center scale-75 animate-bounce">
-            <h2 class="text-5xl font-black text-cyan-400 drop-shadow-[0_0_25px_rgba(6,182,212,0.8)] tracking-widest">
+        <div class="text-center animate-bounce px-8 py-6 rounded-3xl border-2 border-cyan-400/60 bg-slate-900/90 shadow-[0_0_60px_rgba(6,182,212,0.6)]">
+            <div class="text-xs font-mono uppercase tracking-[0.35em] text-cyan-300 mb-1">HYPERSPACE JUMP COMPLETE</div>
+            <h2 class="text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-300 via-white to-blue-400 drop-shadow-[0_0_25px_rgba(6,182,212,0.9)] tracking-widest">
                 LEVEL UP!
             </h2>
-            <p class="text-xl font-bold text-white mt-3 tracking-wider">
-                解鎖任務：${LEVEL_DATA[state.currentLevel].title}
+            <p class="text-xl font-extrabold text-yellow-300 mt-3 tracking-wider">
+                躍遷進入：${LEVEL_DATA[state.currentLevel].title}
             </p>
-            <p class="text-sm text-slate-400 mt-2 italic">
+            <p class="text-sm text-slate-300 mt-1.5">
                 ${LEVEL_DATA[state.currentLevel].description}
             </p>
         </div>
@@ -574,30 +724,103 @@ function showLevelUpBanner() {
     dom.gameArea.appendChild(banner);
     
     state.activeEnemies.forEach(e => {
-        createParticles(e.x, e.y + 32);
+        createParticles(e.x, e.y + 36, 15);
         e.el.remove();
     });
     state.activeEnemies = [];
     
     setTimeout(() => {
-        banner.classList.add('opacity-0', 'scale-95');
+        banner.classList.add('opacity-0', 'scale-110');
         setTimeout(() => banner.remove(), 500);
-    }, 1800);
+    }, 1900);
 }
 
-// 擊中爆炸碎片推入
-function createParticles(x, y) {
-    const particleCount = 20;
-    const colors = ['#22d3ee', '#ec4899', '#f43f5e', '#f59e0b', '#ffffff'];
-    for (let i = 0; i < particleCount; i++) {
+// --- 3D 透視震波環、爆炸碎片與浮動文字 ---
+function createShockwave(x, y) {
+    state.shockwaves.push({
+        x, y,
+        radius: 10,
+        maxRadius: 95,
+        alpha: 1.0
+    });
+}
+
+function updateAndDrawShockwaves() {
+    ctx.save();
+    for (let i = state.shockwaves.length - 1; i >= 0; i--) {
+        const sw = state.shockwaves[i];
+        sw.radius += 5.5;
+        sw.alpha -= 0.055;
+        
+        if (sw.alpha <= 0) {
+            state.shockwaves.splice(i, 1);
+            continue;
+        }
+        
+        // 繪製 3D 透視壓扁橢圓能量震波環
+        ctx.beginPath();
+        ctx.ellipse(sw.x, sw.y, sw.radius, sw.radius * 0.48, 0, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(34, 211, 238, ${sw.alpha})`;
+        ctx.lineWidth = 3.5 * sw.alpha;
+        ctx.shadowBlur = 15;
+        ctx.shadowColor = '#22d3ee';
+        ctx.stroke();
+    }
+    ctx.restore();
+}
+
+function createFloatingText(x, y, mainText, subText = '') {
+    state.floatingTexts.push({
+        x, y,
+        mainText,
+        subText,
+        alpha: 1.0,
+        vy: -1.8
+    });
+}
+
+function updateAndDrawFloatingTexts() {
+    ctx.save();
+    for (let i = state.floatingTexts.length - 1; i >= 0; i--) {
+        const ft = state.floatingTexts[i];
+        ft.y += ft.vy;
+        ft.alpha -= 0.025;
+        
+        if (ft.alpha <= 0) {
+            state.floatingTexts.splice(i, 1);
+            continue;
+        }
+        
+        ctx.globalAlpha = ft.alpha;
+        ctx.font = '900 20px ui-monospace, SFMono-Regular, Menlo, monospace';
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#facc15';
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = 'rgba(250, 204, 21, 0.8)';
+        ctx.fillText(ft.mainText, ft.x, ft.y);
+        
+        if (ft.subText) {
+            ctx.font = '800 13px sans-serif';
+            ctx.fillStyle = '#34d399';
+            ctx.fillText(ft.subText, ft.x, ft.y - 22);
+        }
+    }
+    ctx.restore();
+}
+
+function createParticles(x, y, count = 22) {
+    const colors = ['#22d3ee', '#38bdf8', '#ec4899', '#f43f5e', '#facc15', '#ffffff'];
+    for (let i = 0; i < count; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const speed = Math.random() * 6.5 + 1.5;
         state.particles.push({
             x: x, y: y,
-            vx: (Math.random() - 0.5) * 9,
-            vy: (Math.random() - 0.5) * 9,
-            radius: Math.random() * 3 + 2,
+            vx: Math.cos(angle) * speed,
+            vy: Math.sin(angle) * speed,
+            radius: Math.random() * 3.8 + 1.5,
             color: colors[Math.floor(Math.random() * colors.length)],
             alpha: 1.0,
-            decay: Math.random() * 0.06 + 0.03
+            decay: Math.random() * 0.045 + 0.025
         });
     }
 }
@@ -608,6 +831,8 @@ function updateAndDrawParticles() {
         const p = state.particles[i];
         p.x += p.vx;
         p.y += p.vy;
+        p.vx *= 0.96;
+        p.vy *= 0.96;
         p.alpha -= p.decay;
         
         if (p.alpha <= 0) {
@@ -618,6 +843,8 @@ function updateAndDrawParticles() {
         ctx.beginPath();
         ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
         ctx.fillStyle = p.color;
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = p.color;
         ctx.globalAlpha = p.alpha;
         ctx.fill();
     }
@@ -625,9 +852,13 @@ function updateAndDrawParticles() {
 }
 
 // --- 6. 能量護盾受擊與美化控制 ---
-function triggerShieldDamage() {
+function triggerShieldDamage(impactX, impactY) {
     state.shield = Math.max(0, state.shield - 20); 
     updateShieldVisuals();
+    
+    if (impactX && impactY) {
+        createParticles(impactX, impactY, 18);
+    }
     
     dom.shipShield.classList.remove('shield-hit');
     void dom.shipShield.offsetWidth; 
@@ -645,22 +876,25 @@ function triggerShieldDamage() {
 
 function updateShieldVisuals() {
     dom.hudShieldPct.textContent = `${state.shield}%`;
+    if (dom.hudShieldBar) {
+        dom.hudShieldBar.style.width = `${state.shield}%`;
+    }
     
-    const borderWidth = Math.max(1, (state.shield / 100) * 6);
+    const borderWidth = Math.max(1.5, (state.shield / 100) * 5);
     dom.shipShield.style.borderWidth = `${borderWidth}px`;
     
     if (state.shield > 60) {
         dom.shipShield.style.borderColor = `rgba(34, 211, 238, ${state.shield / 100})`;
-        dom.shipShield.style.boxShadow = `0 0 ${12 + (state.shield / 100) * 15}px rgba(34, 211, 238, 0.7)`;
-        dom.hudShieldPct.className = "font-mono text-sm font-bold text-cyan-400";
+        dom.hudShieldPct.className = "font-mono text-xs font-black text-cyan-400";
+        if (dom.hudShieldBar) dom.hudShieldBar.className = "h-full bg-gradient-to-r from-cyan-400 to-teal-300 rounded-full transition-all duration-200 shadow-[0_0_10px_#22d3ee]";
     } else if (state.shield > 25) {
         dom.shipShield.style.borderColor = `rgba(245, 158, 11, ${state.shield / 100})`;
-        dom.shipShield.style.boxShadow = `0 0 ${8 + (state.shield / 100) * 12}px rgba(245, 158, 11, 0.5)`;
-        dom.hudShieldPct.className = "font-mono text-sm font-bold text-amber-500";
+        dom.hudShieldPct.className = "font-mono text-xs font-black text-amber-400";
+        if (dom.hudShieldBar) dom.hudShieldBar.className = "h-full bg-gradient-to-r from-amber-500 to-yellow-400 rounded-full transition-all duration-200 shadow-[0_0_10px_#f59e0b]";
     } else {
-        dom.shipShield.style.borderColor = `rgba(239, 68, 68, ${Math.max(0.3, state.shield / 100)})`;
-        dom.shipShield.style.boxShadow = `0 0 8px rgba(239, 68, 68, 0.4)`;
-        dom.hudShieldPct.className = "font-mono text-sm font-bold text-red-500 animate-pulse";
+        dom.shipShield.style.borderColor = `rgba(239, 68, 68, ${Math.max(0.35, state.shield / 100)})`;
+        dom.hudShieldPct.className = "font-mono text-xs font-black text-red-500 animate-pulse";
+        if (dom.hudShieldBar) dom.hudShieldBar.className = "h-full bg-gradient-to-r from-red-600 to-rose-400 rounded-full transition-all duration-200 shadow-[0_0_10px_#ef4444]";
     }
 }
 
@@ -681,16 +915,16 @@ function endGame(isVictory = false) {
     dom.endAccuracy.textContent = `${accuracy}%`;
     dom.endLevel.textContent = state.currentLevel;
     
-    const endBox = dom.endScreen.querySelector('.bg-slate-900\\/95');
+    const endBox = dom.endScreen.querySelector('.holo-card-3d');
     if (isVictory) {
         dom.endTitle.textContent = "🏆 完美通關！拯救星系！";
         dom.endTitle.className = "text-4xl font-black text-yellow-400 drop-shadow-[0_0_20px_rgba(234,179,8,0.7)] tracking-widest";
-        endBox.style.borderColor = "rgba(234, 179, 8, 0.7)"; 
+        if (endBox) endBox.style.borderColor = "rgba(234, 179, 8, 0.7)"; 
         playLevelUpSound(); 
     } else {
         dom.endTitle.textContent = "💥 戰機墜毀！任務失敗";
         dom.endTitle.className = "text-4xl font-black text-red-500 drop-shadow-[0_0_20px_rgba(239,68,68,0.6)] tracking-widest";
-        endBox.style.borderColor = "rgba(239, 68, 68, 0.5)"; 
+        if (endBox) endBox.style.borderColor = "rgba(239, 68, 68, 0.5)"; 
     }
     
     saveAndShowLeaderboard(accuracy);
